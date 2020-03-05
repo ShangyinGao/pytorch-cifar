@@ -10,6 +10,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+import pdb
+
 
 class BasicBlock(nn.Module):
     expansion = 1
@@ -86,6 +88,7 @@ class ResNet(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x):
+        # pdb.set_trace()
         out = F.relu(self.bn1(self.conv1(x)))
         out = self.layer1(out)
         out = self.layer2(out)
@@ -117,7 +120,8 @@ def test():
     net = ResNet18()
     print(net)
     print('\n'+'#'*40)
-    y = net(torch.randn(1,3,32,32))
+    y = net(torch.randn(16,3,32,32))
     print(y.size())
 
-test()
+if __name__ == "__main__":
+    test()
