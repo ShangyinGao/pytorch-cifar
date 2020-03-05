@@ -23,6 +23,7 @@ parser.add_argument('--lr', default=0.1, type=float, help='learning rate')
 parser.add_argument('--resume', '-r', action='store_true', help='resume from checkpoint')
 parser.add_argument('--bs_train', default=256, type=int, help='bs for traning')
 parser.add_argument('--bs_test', default=100, type=int, help='bs for esting')
+parser.add_argument('--optim', default='SGD', type=str, help='optimizer')
 args = parser.parse_args()
 print(f'args:\n{args}')
 
@@ -91,7 +92,12 @@ if args.resume:
     start_epoch = checkpoint['epoch']
 
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=5e-4, nesterov=True)
+if args.optim == 'SGD':
+    optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=5e-4, nesterov=True)
+elif args.optim == 'adam':
+    optimizer = optim.Adam(net.parameters(), lr=args.lr, weight_decay=5e-4)
+else:
+    raise NotImplementedError
 scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[80,150], gamma=0.1)
 
 train_idx = 0
@@ -111,6 +117,7 @@ def train(epoch):
         outputs = net(inputs)
         loss = criterion(outputs, targets)
         loss.backward()
+        torch.nn.utils.clip_grad_value_(net.parameters(), 1)
         optimizer.step()
 
         train_loss += loss.item()

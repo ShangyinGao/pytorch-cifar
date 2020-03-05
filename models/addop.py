@@ -26,6 +26,8 @@ class my_cdist_op(torch.autograd.Function):
 
         if ctx.needs_input_grad[0]:
             grad_input = torch.matmul(input_weight_delta, grad_output.t()).sum(2).permute(1, 0)
+            # hardtanh = torch.nn.Hardtanh()
+            # grad_input = hardtanh(grad_input)
 
         if ctx.needs_input_grad[1]:
             grad_weight = torch.matmul(input_weight_delta.permute(0, 2, 1), grad_output).sum(2).permute(1, 0)
