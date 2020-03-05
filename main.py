@@ -94,8 +94,12 @@ criterion = nn.CrossEntropyLoss()
 optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=5e-4, nesterov=True)
 scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[80,150], gamma=0.1)
 
+train_idx = 0
+test_idx = 0
+
 # Training
 def train(epoch):
+    global train_idx
     print('\nEpoch: %d' % epoch)
     net.train()
     train_loss = 0
@@ -114,11 +118,21 @@ def train(epoch):
         total += targets.size(0)
         correct += predicted.eq(targets).sum().item()
 
-        progress_bar(batch_idx, len(trainloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d) | lr: %.4f'
-            % (train_loss/(batch_idx+1), 100.*correct/total, correct, total, get_lr(optimizer)))
+        ## 
+        curr_lr = get_lr(optimizer)
+        curr_acc = correct / total
+        writer.add_scalar('train/loss', loss, train_idx)
+        writer.add_scalar('train/acc', curr_acc, train_idx)
+        writer.add_scalar('train/lr', curr_lr, train_idx)
+        train_idx += 1
+
+        progress_bar(batch_idx, len(trainloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d) | lr: %.6f'
+            % (train_loss/(batch_idx+1), 100.*curr_acc, correct, total, curr_lr))
+
+        # pdb.set_trace()
 
 def test(epoch):
-    global best_acc
+    global best_acc, test_idx
     net.eval()
     test_loss = 0
     correct = 0
@@ -134,8 +148,14 @@ def test(epoch):
             total += targets.size(0)
             correct += predicted.eq(targets).sum().item()
 
+            ##
+            curr_acc = correct / total
+            writer.add_scalar('test/loss', test_loss, test_idx)
+            writer.add_scalar('test/acc', curr_acc, test_idx)
+            test_idx += 1
+
             progress_bar(batch_idx, len(testloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
-                % (test_loss/(batch_idx+1), 100.*correct/total, correct, total))
+                % (test_loss/(batch_idx+1), 100.*curr_acc, correct, total))
 
     # Save checkpoint.
     acc = 100.*correct/total
@@ -156,3 +176,5 @@ for epoch in range(start_epoch, 200):
     train(epoch)
     test(epoch)
     scheduler.step()
+
+writer.close()

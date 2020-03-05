@@ -8,6 +8,7 @@ import sys
 import time
 import math
 
+import torch
 import torch.nn as nn
 import torch.nn.init as init
 
@@ -167,3 +168,14 @@ class PolynomialLRDecay(_LRScheduler):
                          self.end_learning_rate for base_lr in self.base_lrs]
             for param_group, lr in zip(self.optimizer.param_groups, decay_lrs):
                 param_group['lr'] = lr
+
+
+def print_tensor_shape(tensor_names, tensor_dict):
+    # if not isinstance(tensor_list, list): 
+    #     tensor_list = [tensor_list]
+    for name in tensor_names:
+        if isinstance(tensor_dict[name], torch.Tensor) and name is not 'ctx':
+            # print(f'name: {name}\t\tshape: {tensor_dict[name].shape}')
+            print('{0: <30}\t{1}'.format(f'name: {name}', f'shape: {tensor_dict[name].shape}'))
+            print('#'*20)
+

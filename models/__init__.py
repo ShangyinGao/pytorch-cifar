@@ -14,5 +14,6 @@ from .mobilenet import *
 from .mobilenetv2 import *
 from .efficientnet import *
 
+from .addop import *
 from .adder import *
 from .resnet20 import *

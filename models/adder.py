@@ -13,17 +13,14 @@ import numpy as np
 from torch.autograd import Function
 import math
 
+from .addop import my_cdist_op
+from utils import print_tensor_shape
+
 import types
 import pdb
 
-def print_tensor_shape(tensor_names, tensor_dict):
-    # if not isinstance(tensor_list, list): 
-    #     tensor_list = [tensor_list]
-    for name in tensor_names:
-        if isinstance(tensor_dict[name], torch.Tensor):
-            # print(f'name: {name}\t\tshape: {tensor_dict[name].shape}')
-            print('{0: <10}\t{1}'.format(f'name: {name}', f'shape: {tensor_dict[name].shape}'))
-            print('#'*20)
+
+use_my_cdist = True
 
 def adder2d_function(X, W, stride=1, padding=0, p=1, debug=False):
     n_filters, d_filter, h_filter, w_filter = W.size()
@@ -37,9 +34,19 @@ def adder2d_function(X, W, stride=1, padding=0, p=1, debug=False):
     X_col = X_col.permute(1,2,0).contiguous().view(X_col.size(1),-1)
     W_col = W.view(n_filters, -1)
     
-    out = torch.cdist(W_col,X_col.transpose(0,1).contiguous(),p)
+    if use_my_cdist:
+        assert p == 1, 'my_cdist only support p eq. 1'
 
-    if p == 1:
+    if use_my_cdist:
+        # print('{0: <20}\t{1}'.format(f'name: W', f'shape: {W.shape}'))
+        # print('{0: <20}\t{1}'.format(f'name: X', f'shape: {X.shape}'))
+        # print('{0: <20}\t{1}'.format(f'name: W_col', f'shape: {W_col.shape}'))
+        # print('{0: <20}\t{1}'.format(f'name: X_col', f'shape: {X_col.transpose(0, 1).shape}'))
+        out = my_cdist_op.apply(X_col.transpose(0,1).contiguous(), W_col)
+    else:
+        out = -torch.cdist(W_col,X_col.transpose(0,1).contiguous(),p)
+
+    if p == 2:
         out = -out
 
     if debug:
@@ -85,7 +92,7 @@ def test():
     X = torch.randn(16, 16, 32, 32)
     W = torch.randn(16, 16, 3, 3)
     print(f'X.shape: {X.shape}\nW.shape: {W.shape}')
-    debug = False
+    debug = True
     out_l1 = adder2d_function(X, W, padding=1 ,debug=debug)
     out_l2 = adder2d_function(X, W, padding=1, p=2, debug=debug)
     print(f'out_l1.shape: {out_l1.shape}')
