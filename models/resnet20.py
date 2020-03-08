@@ -2,25 +2,24 @@
 #            Huawei Technologies Co., Ltd. <foss@huawei.com>
 
 # import adder
-from models import adder
 import torch
 import torch.nn as nn
 
 
-def conv3x3(in_planes, out_planes, stride=1):
+def conv3x3(adder2d, in_planes, out_planes, stride=1):
     " 3x3 convolution with padding "
-    return adder.adder2d(in_planes, out_planes, kernel_size=3, stride=stride, padding=1, bias=False)
+    return adder2d(in_planes, out_planes, kernel_size=3, stride=stride, padding=1, bias=False)
 
 
 class BasicBlock(nn.Module):
     expansion=1
 
-    def __init__(self, inplanes, planes, stride=1, downsample=None):
+    def __init__(self, adder2d, inplanes, planes, stride=1, downsample=None):
         super(BasicBlock, self).__init__()
-        self.conv1 = conv3x3(inplanes, planes, stride = stride)
+        self.conv1 = conv3x3(adder2d, inplanes, planes, stride = stride)
         self.bn1 = nn.BatchNorm2d(planes)
         self.relu = nn.ReLU(inplace=True)
-        self.conv2 = conv3x3(planes, planes)
+        self.conv2 = conv3x3(adder2d, planes, planes)
         self.bn2 = nn.BatchNorm2d(planes)
         self.downsample = downsample
         self.stride = stride
@@ -44,12 +43,19 @@ class BasicBlock(nn.Module):
         return out
 
 
-class ResNet(nn.Module):
+class AdderNet(nn.Module):
+    def __init__(self, block, layers, num_classes=10, adder_v=1, **kwargs):
+        super(AdderNet, self).__init__()
+        if adder_v == 'v1':
+            from .adder import adder2d
+        elif adder_v == 'v2':
+            from .adder_v2 import adder2d
+        else:
+            raise NotImplementedError
+        self.adder2d = adder2d
 
-    def __init__(self, block, layers, num_classes=10):
-        super(ResNet, self).__init__()
         self.inplanes = 16
-        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, stride=1, padding=1, bias=False)
+        self.conv1 = nn.Conv2d(1, 16, kernel_size=3, stride=1, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(16)
         self.relu = nn.ReLU(inplace=True)
         self.layer1 = self._make_layer(block, 16, layers[0])
@@ -68,15 +74,15 @@ class ResNet(nn.Module):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
-                adder.adder2d(self.inplanes, planes * block.expansion, kernel_size=1, stride=stride, bias=False),
+                self.adder2d(self.inplanes, planes * block.expansion, kernel_size=1, stride=stride, bias=False),
                 nn.BatchNorm2d(planes * block.expansion)
             )
 
         layers = []
-        layers.append(block(inplanes = self.inplanes, planes = planes, stride = stride, downsample = downsample))
+        layers.append(block(self.adder2d, inplanes = self.inplanes, planes = planes, stride = stride, downsample = downsample))
         self.inplanes = planes * block.expansion
         for _ in range(1, blocks):
-            layers.append(block(inplanes = self.inplanes, planes = planes))
+            layers.append(block(self.adder2d, inplanes = self.inplanes, planes = planes))
 
         return nn.Sequential(*layers)
 
@@ -97,7 +103,7 @@ class ResNet(nn.Module):
 
 
 def resnet20(**kwargs):
-    return ResNet(BasicBlock, [3, 3, 3], **kwargs)
+    return AdderNet(BasicBlock, [3, 3, 3], **kwargs)
    
 
 def test():
