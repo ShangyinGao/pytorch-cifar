@@ -19,13 +19,19 @@ from utils import progress_bar, get_lr
 import pdb
 
 
+torch.manual_seed(0)
+
 parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Training')
 parser.add_argument('--lr', default=0.1, type=float, help='learning rate')
 parser.add_argument('--lr_adaptive', action='store_true')
+parser.add_argument('--lr_increased', action='store_true')
+parser.add_argument('--lr_increase_multiplier', default=100., type=float)
+parser.add_argument('--lr_eta', default=1e-3, type=float)
 parser.add_argument('--resume', '-r', action='store_true', help='resume from checkpoint')
 parser.add_argument('--bs_train', default=256, type=int, help='bs for traning')
 parser.add_argument('--bs_test', default=100, type=int, help='bs for esting')
 parser.add_argument('--optim', default='SGD', type=str, help='optimizer')
+parser.add_argument('--weight_decay', default=5e-4, type=float)
 parser.add_argument('--scheduler', default='multistep', type=str)
 parser.add_argument('--dataset', default='cifar10', type=str, help='dataset')
 parser.add_argument('--total_epoch', default=200, type=int)
@@ -103,13 +109,14 @@ print('==> Building model..')
 # net = ShuffleNetV2(1)
 # net = EfficientNetB0()
 if args.net.lower() == 'resnet':
-    net = ResNet18()
+    net = ResNet18(**vars(args))
 elif args.net.lower() == 'addernet':
-    net = resnet20(adder_v=args.adder_v)
+    net = resnet20(**vars(args))
 else: 
     raise NotImplementedError
 
 # print(net)
+pdb.set_trace()
 
 net = net.to(device)
 
@@ -135,16 +142,17 @@ if args.resume:
 criterion = nn.CrossEntropyLoss()
 if args.optim == 'SGD':
     # optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=5e-4, nesterov=True)
-    optimizer = optim.SGD([{"params" : param} for param in net.parameters()], lr=args.lr, momentum=0.9, weight_decay=5e-4, nesterov=True)
+    optimizer = optim.SGD([{"params" : param} for param in net.parameters()], lr=args.lr, momentum=0.9, weight_decay=args.weight_decay, nesterov=True)
 elif args.optim == 'adam':
-    optimizer = optim.Adam(net.parameters(), lr=args.lr, weight_decay=5e-4)
+    optimizer = optim.Adam(net.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 else:
     raise NotImplementedError
 
 if args.scheduler == 'multistep':
-    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[80,150], gamma=0.1)
+    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[8, 15], gamma=0.1)
 elif args.scheduler == 'cosine':
     scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=1)
+    cosine_decay_step = [8, 15]
 else:
     raise NotImplementedError
 
@@ -152,7 +160,6 @@ train_idx = 0
 test_idx = 0
 global_lr = args.lr
 
-eta = 1e-4
 
 def check_gradient_norm(model, optimizer):
     global global_lr
@@ -161,20 +168,38 @@ def check_gradient_norm(model, optimizer):
         key = ['conv', 'weight']
     else:
         key = ['adder']
+
+    adaptive_lr = key == ['adder'] and args.lr_adaptive
+    increase_lr = key == ['adder'] and args.lr_increased
+    adjust_lr = adaptive_lr or increase_lr
+
     for (name, param), optim_param in zip(model.named_parameters(), optimizer.param_groups):
         # print(f'name: {name}, param: {param.shape}')
         if all([x in name for x in key]) and not name.startswith('conv1') and 'downsample' not in name:
             # print(f'{key}_layer {layer_idx}: {param.shape}')
             # print(f'{layer_idx}: {name} norm: {param.grad.norm()}')
             grad_norm = param.grad.norm()
-            writer.add_scalar(f'grad_check/{layer_idx}', grad_norm, train_idx)
+            gard_sqrt_numel = math.sqrt(param.grad.numel()) 
+            writer.add_scalar(f'grad_check/{layer_idx}', grad_norm / gard_sqrt_numel, train_idx)
 
-            if key == ['adder'] and args.lr_adaptive:
-                lr = global_lr * eta * math.sqrt(param.grad.numel()) / (grad_norm + 1e-3)
+            # if key == ['adder'] and args.lr_adaptive:
+            if adjust_lr:
+                lr = None
+                if adaptive_lr:
+                    lr = global_lr * args.lr_eta * gard_sqrt_numel / (grad_norm + 1e-5)
+                if increase_lr:
+                    lr = args.lr_increase_multiplier * global_lr
                 optim_param['lr'] = lr
                 writer.add_scalar(f'lr/{layer_idx}', lr, train_idx)
 
             layer_idx += 1
+
+def cosine_lr_decay(optimizer, steps, curr_step, gamma=0.1):
+    if curr_step in steps:
+        m = steps.index(curr_step)+1
+        gamma = gamma**m
+        for param in optimizer.param_groups:
+            param['lr'] = param['lr']*gamma
 
 # Training
 def train(epoch):
@@ -188,6 +213,7 @@ def train(epoch):
         inputs, targets = inputs.to(device), targets.to(device)
         if args.scheduler == 'cosine':
             scheduler.step(epoch + batch_idx / len(trainloader))
+            cosine_lr_decay(optimizer, cosine_decay_step, epoch)
         optimizer.zero_grad()
         outputs = net(inputs)
         loss = criterion(outputs, targets)
@@ -225,12 +251,13 @@ def fake_train(epoch):
     for batch_idx, (inputs, targets) in enumerate(trainloader):
         if args.scheduler == 'cosine':
             scheduler.step(epoch + batch_idx / len(trainloader))
+            cosine_lr_decay(optimizer, cosine_decay_step, epoch)
         curr_lr = get_lr(optimizer)
         optimizer.step()
         writer.add_scalar('train/lr', curr_lr, train_idx)
         train_idx += 1
-        progress_bar(batch_idx, len(trainloader), 'batch_idx: %d'
-            % ( batch_idx))
+        progress_bar(batch_idx, len(trainloader), 'batch_idx: %d | lr: %.6f'
+            % ( batch_idx, get_lr(optimizer)))
 
 def test(epoch):
     global best_acc, test_idx

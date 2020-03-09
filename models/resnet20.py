@@ -47,15 +47,19 @@ class AdderNet(nn.Module):
     def __init__(self, block, layers, num_classes=10, adder_v=1, **kwargs):
         super(AdderNet, self).__init__()
         if adder_v == 'v1':
+            print('==> adderNet using v1')
             from .adder import adder2d
         elif adder_v == 'v2':
+            print('==> adderNet using v2')
             from .adder_v2 import adder2d
         else:
             raise NotImplementedError
         self.adder2d = adder2d
 
+        input_channels = 3 if kwargs['dataset'].lower() == 'cifar10'  else 1
+
         self.inplanes = 16
-        self.conv1 = nn.Conv2d(1, 16, kernel_size=3, stride=1, padding=1, bias=False)
+        self.conv1 = nn.Conv2d(input_channels, 16, kernel_size=3, stride=1, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(16)
         self.relu = nn.ReLU(inplace=True)
         self.layer1 = self._make_layer(block, 16, layers[0])

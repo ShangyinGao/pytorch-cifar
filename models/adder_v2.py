@@ -64,3 +64,14 @@ class adder2d(nn.Module):
         return output_2
     
     
+
+def _test():
+    input = torch.randn(2, 1, 3, 3).requires_grad_(True)
+    net = adder2d(1, 4, 3, padding=1)
+    out = net(input)
+    loss = torch.sum(out)
+    loss.backward()
+    pdb.set_trace()
+
+if __name__ == "__main__":
+    _test()

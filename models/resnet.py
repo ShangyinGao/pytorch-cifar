@@ -174,8 +174,11 @@ class ResNet(nn.Module):
 
     def __init__(self, block, layers, num_classes=10, **kwargs):
         super(ResNet, self).__init__()
+
+        input_channels = 3 if kwargs['dataset'].lower() == 'cifar10'  else 1
+
         self.inplanes = 16
-        self.conv1 = nn.Conv2d(1, 16, kernel_size=3, stride=1, padding=1, bias=False)
+        self.conv1 = nn.Conv2d(input_channels, 16, kernel_size=3, stride=1, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(16)
         self.relu = nn.ReLU(inplace=True)
         self.layer1 = self._make_layer(block, 16, layers[0])
