@@ -5,6 +5,10 @@
 import torch
 import torch.nn as nn
 
+from utils import get_kernel_op
+
+import pdb
+
 
 def conv3x3(adder2d, in_planes, out_planes, stride=1):
     " 3x3 convolution with padding "
@@ -44,35 +48,50 @@ class BasicBlock(nn.Module):
 
 
 class AdderNet(nn.Module):
-    def __init__(self, block, layers, num_classes=10, adder_v=1, **kwargs):
+    def __init__(self, block, layers, num_classes=10, **kwargs):
         super(AdderNet, self).__init__()
-        if adder_v == 'v1':
-            print('==> adderNet using v1')
-            from .adder import adder2d
-        elif adder_v == 'v2':
-            print('==> adderNet using v2')
-            from .adder_v2 import adder2d
-        else:
-            raise NotImplementedError
-        self.adder2d = adder2d
 
+        self.adder2d = get_kernel_op(kwargs)
         input_channels = 3 if kwargs['dataset'].lower() == 'cifar10'  else 1
+        first_conv = kwargs.get('first_conv')
+        fc_conv = kwargs.get('fc_conv')
+        # self.fake = nn.Conv2d(1, 1, 1)
 
         self.inplanes = 16
-        self.conv1 = nn.Conv2d(input_channels, 16, kernel_size=3, stride=1, padding=1, bias=False)
+
+        if first_conv:
+            self.conv1 = nn.Conv2d(input_channels, 16, kernel_size=3, stride=1, padding=1, bias=False)
+        else:
+            self.conv1 = self.adder2d(input_channels, 16, kernel_size=3, stride=1, padding=1, bias=False)
+
         self.bn1 = nn.BatchNorm2d(16)
         self.relu = nn.ReLU(inplace=True)
         self.layer1 = self._make_layer(block, 16, layers[0])
         self.layer2 = self._make_layer(block, 32, layers[1], stride=2)
         self.layer3 = self._make_layer(block, 64, layers[2], stride=2)
         self.avgpool = nn.AvgPool2d(8, stride=1)
-        self.fc = nn.Conv2d(64 * block.expansion, num_classes, 1, bias=False)
+
+        if fc_conv:
+            self.fc = nn.Conv2d(64 * block.expansion, num_classes, 1, bias=False)
+        else:
+            self.fc = self.adder2d(64 * block.expansion, num_classes, 1, bias=False)
+
         self.bn2 = nn.BatchNorm2d(num_classes)
         
+        # for m in self.modules():
+        #     if isinstance(m, nn.BatchNorm2d):
+        #         m.weight.data.fill_(1)
+        #         m.bias.data.zero_()
         for m in self.modules():
-            if isinstance(m, nn.BatchNorm2d):
-                m.weight.data.fill_(1)
-                m.bias.data.zero_()
+            if isinstance(m, (nn.Conv2d)):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            elif isinstance(m, self.adder2d):
+                nn.init.kaiming_normal_(m.adder, mode='fan_out', nonlinearity='relu')
+            elif isinstance(m, (nn.BatchNorm2d, nn.GroupNorm)):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
+
          
     def _make_layer(self, block, planes, blocks, stride=1):
         downsample = None

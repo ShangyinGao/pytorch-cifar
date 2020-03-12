@@ -89,6 +89,10 @@ class adder2d(nn.Module):
             output += self.b.unsqueeze(0).unsqueeze(2).unsqueeze(3)
         
         return output
+
+    def extra_repr(self):
+        return f'{"v1".upper()}, {self.input_channel} {self.output_channel}, '+\
+                 f'kenrel_size={self.kernel_size}, stride={self.stride}, padding={self.padding}, bias={self.bias}'
     
     
 def test():

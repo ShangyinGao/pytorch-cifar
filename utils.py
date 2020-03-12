@@ -179,3 +179,18 @@ def print_tensor_shape(tensor_names, tensor_dict):
             print('{0: <30}\t{1}'.format(f'name: {name}', f'shape: {tensor_dict[name].shape}'))
             print('#'*20)
 
+
+def get_kernel_op(kwargs):
+        if kwargs.get('adder_v') == 'v1':
+            print('==> adderNet using v1')
+            from models.adder import adder2d
+        elif kwargs.get('adder_v') == 'v2':
+            print('==> adderNet using v2')
+            from models.adder_v2 import adder2d
+        elif kwargs.get('adder_v') == 'conv':
+            print('==> adderNet using conv kernel')
+            adder2d = nn.Conv2d
+        else:
+            raise NotImplementedError
+
+        return adder2d

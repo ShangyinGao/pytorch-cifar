@@ -6,3 +6,4 @@ checkpoint/
 *.ipynb
 run*
 requirements.txt
+.DS_Store

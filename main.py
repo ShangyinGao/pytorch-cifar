@@ -13,7 +13,8 @@ import math
 import argparse
 from tensorboardX import SummaryWriter
 
-from models import *
+# from models import *
+from models import models_dict
 from utils import progress_bar, get_lr
 
 import pdb
@@ -26,21 +27,28 @@ parser.add_argument('--lr', default=0.1, type=float, help='learning rate')
 parser.add_argument('--lr_adaptive', action='store_true')
 parser.add_argument('--lr_increased', action='store_true')
 parser.add_argument('--lr_increase_multiplier', default=100., type=float)
-parser.add_argument('--lr_eta', default=1e-3, type=float)
+parser.add_argument('--lr_eta', default=1, type=float)
+parser.add_argument('--lr_divider', default=1e-3, type=float)
+parser.add_argument('--lr_max', default=float('inf'), type=float)
 parser.add_argument('--resume', '-r', action='store_true', help='resume from checkpoint')
 parser.add_argument('--bs_train', default=256, type=int, help='bs for traning')
 parser.add_argument('--bs_test', default=100, type=int, help='bs for esting')
 parser.add_argument('--optim', default='SGD', type=str, help='optimizer')
-parser.add_argument('--weight_decay', default=5e-4, type=float)
-parser.add_argument('--scheduler', default='multistep', type=str)
-parser.add_argument('--dataset', default='cifar10', type=str, help='dataset')
-parser.add_argument('--total_epoch', default=200, type=int)
-parser.add_argument('--adder_v', default='v1', type=str)
+parser.add_argument('--decay_steps', default='80,150', type=str)
+parser.add_argument('--weight_decay', default=0, type=float)
+parser.add_argument('--scheduler', default='multistep', choices=['multistep', 'cosine'], type=str)
+parser.add_argument('--dataset', default='cifar10', type=str, choices=['cifar10', 'MNIST'], help='dataset')
+parser.add_argument('--total_epoch', default=100, type=int)
+parser.add_argument('--adder_v', default='v2', type=str, choices=['v1', 'v2', 'conv'])
 parser.add_argument('--net', default='addernet', type=str)
+parser.add_argument('--first_conv', action='store_true')
+parser.add_argument('--fc_conv', action='store_true')
+parser.add_argument('--save_iteration', default=50, type=int)
+parser.add_argument('--writer_suffix', default='', type=str)
 args = parser.parse_args()
 print(f'args:\n{args}')
 
-writer = SummaryWriter()
+writer = SummaryWriter(comment=f'__{args.writer_suffix}')
 print(f'writer.logdir: {writer.logdir}')
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -54,7 +62,7 @@ print('==> Preparing data..')
 
 if args.dataset == 'mnist':
     trainloader = torch.utils.data.DataLoader(
-        torchvision.datasets.MNIST('./data', train=True, download=True,
+        torchvision.datasets.MNIST('../data', train=True, download=True,
                        transform=transforms.Compose([
                            transforms.Resize(32),
                            transforms.RandomHorizontalFlip(),
@@ -63,7 +71,7 @@ if args.dataset == 'mnist':
                        ])),
         batch_size=args.bs_train, shuffle=True, num_workers=2)
     testloader = torch.utils.data.DataLoader(
-        torchvision.datasets.MNIST('./data', train=False, transform=transforms.Compose([
+        torchvision.datasets.MNIST('../data', train=False, transform=transforms.Compose([
                            transforms.Resize(32),
                            transforms.ToTensor(),
                            transforms.Normalize((0.1307,), (0.3081,))
@@ -81,10 +89,10 @@ elif args.dataset == 'cifar10':
         transforms.ToTensor(),
         transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
     ])
-    trainset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform_train)
+    trainset = torchvision.datasets.CIFAR10(root='../data', train=True, download=True, transform=transform_train)
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=args.bs_train, shuffle=True, num_workers=2)
 
-    testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform_test)
+    testset = torchvision.datasets.CIFAR10(root='../data', train=False, download=True, transform=transform_test)
     testloader = torch.utils.data.DataLoader(testset, batch_size=args.bs_test, shuffle=False, num_workers=2)
 else:
     raise NotImplementedError
@@ -96,27 +104,9 @@ classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship'
 
 # Model
 print('==> Building model..')
-# net = VGG('VGG19')
-# net = PreActResNet18()
-# net = GoogLeNet()
-# net = DenseNet121()
-# net = ResNeXt29_2x64d()
-# net = MobileNet()
-# net = MobileNetV2()
-# net = DPN92()
-# net = ShuffleNetG2()
-# net = SENet18()
-# net = ShuffleNetV2(1)
-# net = EfficientNetB0()
-if args.net.lower() == 'resnet':
-    net = ResNet18(**vars(args))
-elif args.net.lower() == 'addernet':
-    net = resnet20(**vars(args))
-else: 
-    raise NotImplementedError
+net = models_dict[args.net](**vars(args))
 
-# print(net)
-pdb.set_trace()
+print(net)
 
 net = net.to(device)
 
@@ -149,10 +139,10 @@ else:
     raise NotImplementedError
 
 if args.scheduler == 'multistep':
-    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[8, 15], gamma=0.1)
+    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[int(x) for x in args.decay_steps.split(',')], gamma=0.1)
 elif args.scheduler == 'cosine':
     scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=1)
-    cosine_decay_step = [8, 15]
+    cosine_decay_step = [int(x) for x in args.decay_steps.split(',')]
 else:
     raise NotImplementedError
 
@@ -162,12 +152,18 @@ global_lr = args.lr
 
 
 def check_gradient_norm(model, optimizer):
+    # params_dict = dict(model.named_parameters())
+    # for name in params_dict.keys():
+    #     if any([x in name for x in ['weight', 'adder']]):
+    #         print(f'name: {name}\t\t{params_dict[name].grad.shape}\t\t{params_dict[name].grad.norm()}')
+
+
     global global_lr
     layer_idx = 0
-    if 'resnet' in model.__class__.__name__.lower():
-        key = ['conv', 'weight']
-    else:
-        key = ['adder']
+    # if 'resnet' in model.__class__.__name__.lower():
+    #     key = ['conv', 'weight']
+    # else:
+    key = ['adder']
 
     adaptive_lr = key == ['adder'] and args.lr_adaptive
     increase_lr = key == ['adder'] and args.lr_increased
@@ -175,22 +171,26 @@ def check_gradient_norm(model, optimizer):
 
     for (name, param), optim_param in zip(model.named_parameters(), optimizer.param_groups):
         # print(f'name: {name}, param: {param.shape}')
-        if all([x in name for x in key]) and not name.startswith('conv1') and 'downsample' not in name:
+        if all([x in name for x in key]): # and not name.startswith('conv1'):
             # print(f'{key}_layer {layer_idx}: {param.shape}')
             # print(f'{layer_idx}: {name} norm: {param.grad.norm()}')
             grad_norm = param.grad.norm()
             gard_sqrt_numel = math.sqrt(param.grad.numel()) 
-            writer.add_scalar(f'grad_check/{layer_idx}', grad_norm / gard_sqrt_numel, train_idx)
+            if not train_idx % args.save_iteration:
+                writer.add_scalar(f'grad_check/{layer_idx}', grad_norm, train_idx)
 
             # if key == ['adder'] and args.lr_adaptive:
             if adjust_lr:
                 lr = None
                 if adaptive_lr:
-                    lr = global_lr * args.lr_eta * gard_sqrt_numel / (grad_norm + 1e-5)
+                    lr = global_lr * args.lr_eta * gard_sqrt_numel / (grad_norm + args.lr_divider)
                 if increase_lr:
                     lr = args.lr_increase_multiplier * global_lr
+                if lr > args.lr_max:
+                    lr = args.lr_max
                 optim_param['lr'] = lr
-                writer.add_scalar(f'lr/{layer_idx}', lr, train_idx)
+                if not train_idx % args.save_iteration:
+                    writer.add_scalar(f'lr/{layer_idx}', lr, train_idx)
 
             layer_idx += 1
 
@@ -278,7 +278,7 @@ def test(epoch):
 
             ##
             curr_acc = correct / total
-            writer.add_scalar('test/loss', test_loss, test_idx)
+            writer.add_scalar('test/loss', loss, test_idx)
             writer.add_scalar('test/acc', curr_acc, test_idx)
             test_idx += 1
 
@@ -299,6 +299,20 @@ def test(epoch):
         torch.save(state, './checkpoint/ckpt.pth')
         best_acc = acc
 
+
+## inference 
+def test_inference():
+    print('==> test inference time:')
+    import timeit
+    net.eval()
+    input_channels = 3 if args.dataset == 'cifar10' else 1
+    inputs = torch.randn(args.bs_train, input_channels, 32, 32)
+    inputs = inputs.to(device)
+    start = timeit.default_timer()
+    out = net(inputs)
+    print(f'==> inference time: {1000. * (timeit.default_timer() - start)} ms')
+
+test_inference()
 
 for epoch in range(start_epoch, args.total_epoch):
     train(epoch)
