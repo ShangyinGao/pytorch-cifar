@@ -65,6 +65,7 @@ class ResNet(nn.Module):
         input_channels = 3 if kwargs['dataset'].lower() == 'cifar10'  else 1
         first_conv = kwargs.get('first_conv')
         fc_conv = kwargs.get('fc_conv')
+        self.fake = nn.Conv2d(1, 1, 1)
 
         self.inplanes = 64
         

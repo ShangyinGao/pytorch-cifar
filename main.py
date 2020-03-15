@@ -312,7 +312,7 @@ def test_inference():
     out = net(inputs)
     print(f'==> inference time: {1000. * (timeit.default_timer() - start)} ms')
 
-test_inference()
+# test_inference()
 
 for epoch in range(start_epoch, args.total_epoch):
     train(epoch)

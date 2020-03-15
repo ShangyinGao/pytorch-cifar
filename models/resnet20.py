@@ -55,7 +55,7 @@ class AdderNet(nn.Module):
         input_channels = 3 if kwargs['dataset'].lower() == 'cifar10'  else 1
         first_conv = kwargs.get('first_conv')
         fc_conv = kwargs.get('fc_conv')
-        # self.fake = nn.Conv2d(1, 1, 1)
+        self.fake = nn.Conv2d(1, 1, 1)
 
         self.inplanes = 16
 
@@ -116,10 +116,10 @@ class AdderNet(nn.Module):
 
         x = self.layer1(x)
         x = self.layer2(x)
-        x = self.layer3(x)
+        x = self.layer3(x) ## out: [bs, 64, 8, 8]
 
         x = self.avgpool(x)
-        x = self.fc(x)
+        x = self.fc(x) ## out: [bs, 10, 1, 1]
         x = self.bn2(x)
 
         return x.view(x.size(0), -1)

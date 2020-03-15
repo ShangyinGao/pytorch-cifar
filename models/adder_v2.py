@@ -24,19 +24,39 @@ def adder2d_function(X, W, stride=1, padding=0, groups=1):
     w_out = (w_x - w_filter + 2 * padding) / stride + 1
 
     h_out, w_out = int(h_out), int(w_out)
-    X_col = torch.nn.functional.unfold(X.view(1, -1, h_x, w_x), h_filter, dilation=1, padding=padding, stride=stride).view(n_x, -1, h_out*w_out)
-    X_col = X_col.permute(1,2,0).contiguous().view(X_col.size(1),-1)
-    W_col = W.view(n_filters, -1)
-    
-    out_2 = -torch.cdist(W_col,X_col.transpose(0,1).contiguous(),1)
-    out_2 = out_2.detach()
-    out = -torch.cdist(W_col,X_col.transpose(0,1).contiguous(),2)
-    out.data = out_2.data
-    
-    out = out.view(n_filters, h_out, w_out, n_x)
-    out = out.permute(3, 0, 1, 2).contiguous()
-    
-    return out
+
+    if groups == 1:
+        X_col = torch.nn.functional.unfold(X.view(1, -1, h_x, w_x), h_filter, dilation=1, padding=padding, stride=stride).view(n_x, -1, h_out*w_out)
+        X_col = X_col.permute(1,2,0).contiguous().view(X_col.size(1),-1)
+        W_col = W.view(n_filters, -1)
+        
+        out_2 = -torch.cdist(W_col,X_col.transpose(0,1).contiguous(),1)
+        out_2 = out_2.detach()
+        out = -torch.cdist(W_col,X_col.transpose(0,1).contiguous(),2)
+        out.data = out_2.data
+        
+        out = out.view(n_filters, h_out, w_out, n_x)
+        out = out.permute(3, 0, 1, 2).contiguous()
+        return out
+    else:
+        out_final = torch.Tensor(n_x, n_filters, h_out, w_out)
+        outs = []
+        for g in range(groups):
+            X_part = X[:,g,...].unsqueeze(1)
+            W_part = W[g, ...].unsqueeze(0)
+            X_col = torch.nn.functional.unfold(X_part.view(1, -1, h_x, w_x), h_filter, dilation=1, padding=padding, stride=stride).view(n_x, -1, h_out*w_out)
+            X_col = X_col.permute(1,2,0).contiguous().view(X_col.size(1),-1)
+            W_col = W_part.view(1, -1)
+            
+            out_2 = -torch.cdist(W_col,X_col.transpose(0,1).contiguous(),1)
+            out_2 = out_2.detach()
+            out = -torch.cdist(W_col,X_col.transpose(0,1).contiguous(),2)
+            out.data = out_2.data
+            
+            out = out.view(1, h_out, w_out, n_x)
+            out = out.permute(3, 0, 1, 2).contiguous()
+            outs.append(out)
+        return torch.cat(outs, dim=1)
 
     
 class adder2d(nn.Module):
@@ -62,8 +82,8 @@ class adder2d(nn.Module):
         return output
     
     def extra_repr(self):
-        return f'{"v2".upper()}, {self.input_channel} {self.output_channel}, '+\
-                 f'kenrel_size={self.kernel_size}, stride={self.stride}, padding={self.padding}, bias={self.bias}'
+        return f'{"v2".upper()}, {self.input_channel}, {self.output_channel}, '+\
+                 f'kenrel_size={self.kernel_size}, stride={self.stride}, padding={self.padding}, groups={self.groups}, bias={self.bias}'
 
     
 
@@ -73,7 +93,6 @@ def _test():
     out = net(input)
     loss = torch.sum(out)
     loss.backward()
-    pdb.set_trace()
 
 if __name__ == "__main__":
     _test()

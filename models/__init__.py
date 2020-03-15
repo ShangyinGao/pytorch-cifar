@@ -23,6 +23,7 @@ models_dict = {
     'vgg': VGG,
     'resnet18': ResNet18,
     'resnet50': ResNet50,
+    'senet18': SENet18,
     'densenet': DenseNet121,
     'mobilenet': MobileNet,
     'mobilenetv2': MobileNetV2,
